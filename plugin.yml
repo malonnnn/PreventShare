@@ -1,0 +1,19 @@
+name: PreventShare
+main: com.ninjaguild.preventshare.PreventShare
+version: 1.0.2
+author: NinjaStix
+
+depend: [Vault]
+
+permissions:
+  preventshare.bypass:
+    default: op
+  preventshare.reload:
+    default: op
+  preventshare.admin:
+    default: op
+
+commands:
+  preventshare:
+    usage: '/preventshare <add|remove|reload>'
+    aliases: [ps, pshare]

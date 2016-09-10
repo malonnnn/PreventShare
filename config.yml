@@ -1,0 +1,28 @@
+# DO NOT MODIFY OR REMOVE #
+version: 1
+# ----------------------- #
+
+#disables picking up shot arrows
+#including arrows fired from dispensers, etc.
+disable-arrow-pickup: true
+
+#Disable arrows shot from dispensers
+disable-dispenser-arrows: false
+
+#Disable dispensed armor if restricted
+disable-dispenser-armor: true
+
+#Store the item stack data for the arrow
+#Allows for recreating the itemstack
+store-arrow-data: false
+#Only store data for restricted arrows
+only-store-restricted: true
+
+#Prevent players from removing restricted items from an inventory
+disable-inventory: true
+
+#If a player changes permission groups they might still posses items from
+#their previous group, as a solution you can drop a restricted item when held.
+drop-on-held: false
+#Depends on the above option, will remove the item after drop.
+despawn-held-item: false
