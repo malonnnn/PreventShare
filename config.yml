@@ -26,3 +26,5 @@ disable-inventory: true
 drop-on-held: false
 #Depends on the above option, will remove the item after drop.
 despawn-held-item: false
+
+disable-item-rename: true
