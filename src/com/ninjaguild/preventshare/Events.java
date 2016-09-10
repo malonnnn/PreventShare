@@ -33,9 +33,11 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockDispenseEvent;
 import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.PrepareAnvilEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerPickupArrowEvent;
 import org.bukkit.event.player.PlayerPickupItemEvent;
+import org.bukkit.inventory.AnvilInventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.metadata.FixedMetadataValue;
 
@@ -243,4 +245,17 @@ public class Events implements Listener {
 		}
 	}
 
+	@EventHandler
+	public void onAnvil(InventoryClickEvent event) {
+		if(plugin.getConfig().getBoolean("disable-item-rename")) {
+			Player player = (Player)event.getWhoClicked();
+			String playerPrimaryGroup = plugin.getPermission().getPrimaryGroup(player.getWorld().getName(), player);
+			if(event.getInventory() instanceof AnvilInventory) {
+				AnvilInventory anvilInventory = (AnvilInventory)event.getInventory();
+				if(!plugin.getItemManager().canUse(playerPrimaryGroup, anvilInventory.getItem(0)) || !plugin.getItemManager().canUse(playerPrimaryGroup, anvilInventory.getItem(1))) {
+				    player.closeInventory();
+                }
+			}
+		}
+	}
 }
