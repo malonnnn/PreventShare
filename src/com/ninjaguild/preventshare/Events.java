@@ -23,6 +23,7 @@ import java.util.Random;
 
 import org.bukkit.Material;
 import org.bukkit.Sound;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Item;
@@ -152,7 +153,12 @@ public class Events implements Listener {
 		if (e.isCancelled()) {
 			return;
 		}
-		
+
+		Block dispenserBlock = e.getBlock();
+		if(dispenserBlock.getType() == Material.DROPPER){
+			return;
+		}
+
 		boolean cancelable = false;
 		ItemStack dispensedStack = e.getItem();
 		
