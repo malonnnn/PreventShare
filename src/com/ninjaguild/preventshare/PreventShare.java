@@ -19,71 +19,256 @@
 
 package com.ninjaguild.preventshare;
 
-import java.util.logging.Level;
+import java.util.Random;
 
-import org.bukkit.configuration.serialization.ConfigurationSerialization;
-import org.bukkit.plugin.RegisteredServiceProvider;
-import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.Material;
+import org.bukkit.Sound;
+import org.bukkit.block.Block;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Item;
+import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockDispenseEvent;
+import org.bukkit.event.entity.EntityShootBowEvent;
+import org.bukkit.event.inventory.InventoryAction;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.event.inventory.PrepareAnvilEvent;
+import org.bukkit.event.player.PlayerItemHeldEvent;
+import org.bukkit.event.player.PlayerPickupArrowEvent;
+import org.bukkit.event.player.PlayerPickupItemEvent;
+import org.bukkit.inventory.AnvilInventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.metadata.FixedMetadataValue;
 
-import net.md_5.bungee.api.ChatColor;
-import net.milkbowl.vault.permission.Permission;
+public class Events implements Listener {
 
-public class PreventShare extends JavaPlugin {
+	private final PreventShare plugin;
+	private final Random rand;
 	
-	private Permission permission = null;
-	private RestrictedItemManager resItemMan = null;
+	public Events(final PreventShare plugin) {
+		this.plugin = plugin;
+		this.rand = new Random();
+	}
 	
-	private final String chatPrefix = ChatColor.DARK_GRAY + "[" + ChatColor.GRAY + "PS" + ChatColor.DARK_GRAY + "] ";
+	@EventHandler(priority = EventPriority.HIGHEST)
+	public void onPlayerPickupItem(PlayerPickupItemEvent e) {
+		if (e.isCancelled()) {
+			return;
+		}
+		
+		Player player = e.getPlayer();
+		
+		if (player.hasPermission("preventshare.bypass")) {
+			return;
+		}
+		
+		Item drop = e.getItem();
+		ItemStack dropStack = drop.getItemStack();
+		
+		String playerPrimaryGroup = plugin.getPermission().getPrimaryGroup(player.getWorld().getName(), player);
+		if (!plugin.getItemManager().canUse(playerPrimaryGroup, dropStack)) {
+			e.setCancelled(true);
+		}
+	}
+	
+	@EventHandler
+	public void onPlayerPickupArrow(PlayerPickupArrowEvent e) {
+		boolean disableArrowPickup = plugin.getConfig().getBoolean("disable-arrow-pickup");
+		if (disableArrowPickup) {
+			e.setCancelled(true);
+		}
+		else if (e.getItem().hasMetadata("arrowdata")) {
+			e.setCancelled(true);
+			
+			Player player = e.getPlayer();
+			ItemStack arrowStack = (ItemStack)e.getItem().getMetadata("arrowdata").get(0).value();
+			String playerPrimaryGroup = plugin.getPermission().getPrimaryGroup(player.getWorld().getName(), player);
+			
+			if (player.hasPermission("preventshare.bypass") || plugin.getItemManager().canUse(playerPrimaryGroup, arrowStack)) {
+				float pitch = ((rand.nextFloat() - rand.nextFloat()) * 0.7F + 1.0F) * 2.0F;
+				player.getWorld().playSound(player.getLocation(), Sound.ENTITY_ITEM_PICKUP, 0.2F, pitch);
 
-	@Override
-	public void onEnable() {
-		if (!setupPermissions()) {
-			getLogger().log(Level.WARNING, "No permissions plugin found! Disabling...");
-			this.getPluginLoader().disablePlugin(this);
-			getLogger().log(Level.INFO, "Plugin Disabled");
+				player.getInventory().addItem(arrowStack);
+				e.getItem().removeMetadata("arrowdata", plugin);
+				e.getItem().remove();
+			}
+		}
+	}
+	
+	@EventHandler
+	public void onEntityShootBow(EntityShootBowEvent e) {
+		if (e.isCancelled() || e.getEntityType() != EntityType.PLAYER) {
 			return;
 		}
 
-		saveDefaultConfig();
-		
-		//update config version
-		String currentVersion = getConfig().getString("version").trim();
-		ConfigUtil cu = new ConfigUtil(this);
-		cu.updateConfig(currentVersion);
-		
-		getServer().getPluginManager().registerEvents(new Events(this), this);
-		getCommand("preventshare").setExecutor(new Commands(this));
-		
-		ConfigurationSerialization.registerClass(RestrictedItem.class);
-		
-		resItemMan = new RestrictedItemManager(this);
-	}
-	
-	@Override
-	public void onDisable() {
-		//
-	}
-	
-	private boolean setupPermissions()
-	{
-		RegisteredServiceProvider<Permission> permissionProvider =
-				getServer().getServicesManager().getRegistration(net.milkbowl.vault.permission.Permission.class);
-		if (permissionProvider != null) {
-			permission = permissionProvider.getProvider();
+		boolean pickupArrows = !plugin.getConfig().getBoolean("disable-arrow-pickup");
+		boolean storeArrowData = plugin.getConfig().getBoolean("store-arrow-data");
+
+		if (pickupArrows && storeArrowData) {
+			Player player = (Player)e.getEntity();
+			ItemStack arrowStack = getArrowStack(player);
+			if (arrowStack != null) {
+				boolean alwaysStore = false;
+				if (arrowStack.hasItemMeta()) {
+					alwaysStore = plugin.getConfig().getBoolean("only-store-restricted");
+				}
+				ItemStack compStack = arrowStack.clone();
+				compStack.setAmount(1);
+				if (alwaysStore || plugin.getItemManager().isRestricted(compStack)) {
+					Entity arrow = e.getProjectile();
+					arrow.setMetadata("arrowdata", new FixedMetadataValue(plugin, compStack));
+				}
+			}
 		}
-		return (permission != null);
 	}
 	
-	protected Permission getPermission() {
-		return permission;
-	}
-	
-	protected RestrictedItemManager getItemManager() {
-		return resItemMan;
-	}
-	
-	protected String getChatPrefix() {
-		return chatPrefix;
+	private ItemStack getArrowStack(Player player) {
+		if (isArrow(player.getInventory().getItemInOffHand())) {
+			return player.getInventory().getItemInOffHand();
+		}
+		else if (isArrow(player.getInventory().getItemInMainHand())) {
+			return player.getInventory().getItemInMainHand();
+		}
+
+		for (ItemStack stack : player.getInventory().getContents()) {
+			if (isArrow(stack)) {
+				return stack;
+			}
+		}
+
+		return null;
 	}
 
+	private boolean isArrow(ItemStack stack) {
+		return ((stack != null) && (stack.getType() == Material.ARROW));
+	}
+	
+	@EventHandler
+	public void onBlockDispense(BlockDispenseEvent e) {
+		if (e.isCancelled()) {
+			return;
+		}
+
+		Block dispenserBlock = e.getBlock();
+		if(dispenserBlock.getType() == Material.DROPPER){
+			return;
+		}
+
+		boolean cancelable = false;
+		ItemStack dispensedStack = e.getItem();
+		
+		if (dispensedStack.getType() == Material.ARROW) {
+			boolean pickupArrows = !plugin.getConfig().getBoolean("disable-arrow-pickup");
+			boolean disableDispenserArrows = plugin.getConfig().getBoolean("disable-dispenser-arrows");
+			
+			if (pickupArrows && disableDispenserArrows) {
+				cancelable = true;
+			}
+		}
+		else if (plugin.getConfig().getBoolean("disable-dispenser-armor", true)) {
+            if (
+                    dispensedStack.getType() == Material.LEATHER_HELMET ||
+                    dispensedStack.getType() == Material.LEATHER_CHESTPLATE ||
+                    dispensedStack.getType() == Material.LEATHER_LEGGINGS ||
+                    dispensedStack.getType() == Material.LEATHER_BOOTS ||
+
+                    dispensedStack.getType() == Material.IRON_HELMET ||
+                    dispensedStack.getType() == Material.IRON_CHESTPLATE ||
+                    dispensedStack.getType() == Material.IRON_LEGGINGS ||
+                    dispensedStack.getType() == Material.IRON_BOOTS ||
+
+                    dispensedStack.getType() == Material.GOLD_HELMET ||
+                    dispensedStack.getType() == Material.GOLD_CHESTPLATE ||
+                    dispensedStack.getType() == Material.GOLD_LEGGINGS ||
+                    dispensedStack.getType() == Material.GOLD_BOOTS ||
+
+                    dispensedStack.getType() == Material.CHAINMAIL_HELMET ||
+                    dispensedStack.getType() == Material.CHAINMAIL_CHESTPLATE ||
+                    dispensedStack.getType() == Material.CHAINMAIL_LEGGINGS ||
+                    dispensedStack.getType() == Material.CHAINMAIL_BOOTS ||
+
+                    dispensedStack.getType() == Material.DIAMOND_HELMET ||
+                    dispensedStack.getType() == Material.DIAMOND_CHESTPLATE ||
+                    dispensedStack.getType() == Material.DIAMOND_LEGGINGS ||
+                    dispensedStack.getType() == Material.DIAMOND_BOOTS ||
+
+                    dispensedStack.getType() == Material.ELYTRA ||
+                    dispensedStack.getType() == Material.SHIELD
+                    )
+            {
+                cancelable = true;
+            }
+        }
+		
+		if (cancelable) {
+			ItemStack clone = dispensedStack.clone();
+			clone.setAmount(1);
+			if (plugin.getItemManager().isRestricted(clone)) {
+				e.setCancelled(true);
+			}
+		}
+	}
+	
+	@EventHandler
+	public void onInventoryClick(InventoryClickEvent e) {
+		if (e.isCancelled()) {
+			return;
+		}
+		
+		Player player = (Player)e.getWhoClicked();
+
+		if (!player.hasPermission("preventshare.bypass") && plugin.getConfig().getBoolean("disable-inventory")) {
+			if (e.getClickedInventory() != null && !e.getClickedInventory().equals(player.getInventory())) {
+				ItemStack clickedItem = e.getCurrentItem();
+				String playerPrimaryGroup = plugin.getPermission().getPrimaryGroup(player.getWorld().getName(), player);
+				if (!plugin.getItemManager().canUse(playerPrimaryGroup, clickedItem)) {
+					e.setCancelled(true);
+				}
+			}
+		}
+	}
+	
+	@EventHandler
+	public void onPlayerItemHeld(PlayerItemHeldEvent e) {
+		if (e.isCancelled()) {
+			return;
+		}
+
+		if (plugin.getConfig().getBoolean("drop-on-held")) {
+			int newSlot = e.getNewSlot();
+			Player player = e.getPlayer();
+			String playerPrimaryGroup = plugin.getPermission().getPrimaryGroup(player.getWorld().getName(), player);
+			ItemStack heldItem = e.getPlayer().getInventory().getItem(newSlot);
+			if (!plugin.getItemManager().canUse(playerPrimaryGroup, heldItem)) {
+				if (!plugin.getConfig().getBoolean("despawn-held-item")) {
+					player.getWorld().dropItem(player.getLocation(), heldItem);
+				}
+
+				player.getInventory().setItem(newSlot, new ItemStack(Material.AIR, 1));
+			}
+		}
+	}
+
+	@EventHandler
+	public void onAnvil(InventoryClickEvent event) {
+		if(plugin.getConfig().getBoolean("disable-item-rename")) {
+			Player player = (Player)event.getWhoClicked();
+			String playerPrimaryGroup = plugin.getPermission().getPrimaryGroup(player.getWorld().getName(), player);
+            if(event.getInventory().getType() == InventoryType.ANVIL) {
+                if(!player.hasPermission("preventshare.bypass")) {
+                    AnvilInventory anvil = (AnvilInventory)event.getInventory();
+                    if(anvil.getItem(0) != null && plugin.getItemManager().isRestricted(anvil.getItem(0))) {
+                        if(event.getRawSlot() == 2) {
+                            event.setResult(Event.Result.DENY);
+                        }
+                    }
+                }
+            }
+		}
+	}
 }
